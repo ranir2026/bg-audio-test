@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>BG Audio Test</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #0d0d0f;
+    color: #f2f2f2;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  p.sub { color: #999; font-size: 13px; margin-top: 0; margin-bottom: 28px; }
+  .card {
+    width: 100%;
+    max-width: 360px;
+    background: #1a1a1e;
+    border-radius: 16px;
+    padding: 24px;
+  }
+  input[type=file] {
+    width: 100%;
+    color: #ccc;
+    font-size: 14px;
+    margin-bottom: 20px;
+  }
+  #trackName {
+    font-size: 15px;
+    font-weight: 500;
+    min-height: 20px;
+    margin-bottom: 16px;
+    word-break: break-word;
+  }
+  button {
+    background: #1DB954;
+    color: #000;
+    border: none;
+    border-radius: 999px;
+    padding: 14px 32px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+  }
+  button:disabled { background: #333; color: #777; }
+  #status {
+    margin-top: 24px;
+    font-size: 13px;
+    color: #999;
+    line-height: 1.6;
+    text-align: left;
+  }
+  #status b { color: #ddd; }
+  .log {
+    margin-top: 12px;
+    font-size: 11px;
+    color: #666;
+    text-align: left;
+    max-height: 140px;
+    overflow-y: auto;
+    background: #111;
+    border-radius: 8px;
+    padding: 8px;
+  }
+  .steps {
+    margin-top: 24px;
+    font-size: 12px;
+    color: #888;
+    text-align: left;
+    line-height: 1.7;
+  }
+  .steps li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<h1>🔒 Background Audio Test</h1>
+<p class="sub">Bare-bones test — not the real app</p>
+
+<div class="card">
+  <input type="file" id="fileInput" accept="audio/*">
+  <div id="trackName">No file selected</div>
+  <audio id="player" preload="auto"></audio>
+  <button id="playBtn" disabled>Play</button>
+
+  <div id="status">
+    Elapsed while playing: <b id="elapsed">0s</b><br>
+    Times audio paused unexpectedly: <b id="pauseCount">0</b><br>
+    Page visibility changes: <b id="visCount">0</b>
+  </div>
+
+  <div class="log" id="log"></div>
+
+  <ol class="steps">
+    <li>Add this page to your Home Screen first (Share → Add to Home Screen), then open it from there — not from Safari — to test as a PWA.</li>
+    <li>Pick a song, hit Play.</li>
+    <li>Lock your phone (or switch apps) and wait 1–2 minutes.</li>
+    <li>Come back and check the log below for drops.</li>
+  </ol>
+</div>
+
+<script>
+const fileInput = document.getElementById('fileInput');
+const player = document.getElementById('player');
+const playBtn = document.getElementById('playBtn');
+const trackName = document.getElementById('trackName');
+const elapsedEl = document.getElementById('elapsed');
+const pauseCountEl = document.getElementById('pauseCount');
+const visCountEl = document.getElementById('visCount');
+const logEl = document.getElementById('log');
+
+let pauseCount = 0;
+let visCount = 0;
+let startTime = null;
+let elapsedTimer = null;
+
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  const line = document.createElement('div');
+  line.textContent = `[${t}] ${msg}`;
+  logEl.prepend(line);
+}
+
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  player.src = url;
+  trackName.textContent = file.name;
+  playBtn.disabled = false;
+  log(`Loaded file: ${file.name}`);
+
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: file.name,
+      artist: 'Background Test',
+      album: 'Local File'
+    });
+    navigator.mediaSession.setActionHandler('play', () => player.play());
+    navigator.mediaSession.setActionHandler('pause', () => player.pause());
+    navigator.mediaSession.setActionHandler('seekbackward', () => { player.currentTime = Math.max(0, player.currentTime - 10); });
+    navigator.mediaSession.setActionHandler('seekforward', () => { player.currentTime += 10; });
+  }
+});
+
+playBtn.addEventListener('click', () => {
+  if (player.paused) {
+    player.play();
+  } else {
+    player.pause();
+  }
+});
+
+player.addEventListener('play', () => {
+  playBtn.textContent = 'Pause';
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+  startTime = Date.now() - (startTime ? 0 : 0);
+  if (!elapsedTimer) {
+    const base = Date.now() - (player.currentTime * 1000);
+    elapsedTimer = setInterval(() => {
+      elapsedEl.textContent = Math.floor((Date.now() - base) / 1000) + 's';
+    }, 1000);
+  }
+  log('Playback started/resumed');
+});
+
+player.addEventListener('pause', () => {
+  playBtn.textContent = 'Play';
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+  pauseCount++;
+  pauseCountEl.textContent = pauseCount;
+  log('Playback paused (check: did you pause it, or did it stop itself?)');
+});
+
+player.addEventListener('waiting', () => log('Buffering / stalled'));
+player.addEventListener('stalled', () => log('Stalled event fired'));
+player.addEventListener('ended', () => log('Track ended'));
+player.addEventListener('error', (e) => log('ERROR: ' + JSON.stringify(player.error)));
+
+document.addEventListener('visibilitychange', () => {
+  visCount++;
+  visCountEl.textContent = visCount;
+  log(`Visibility changed: ${document.visibilityState}`);
+});
+
+window.addEventListener('pagehide', () => log('pagehide event fired'));
+window.addEventListener('freeze', () => log('freeze event fired (page frozen by OS)'));
+</script>
+
+</body>
+</html>
