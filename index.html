@@ -67,6 +67,15 @@
   }
   .row-btn svg{flex-shrink:0;}
 
+  .track-row-wrap{ position:relative; overflow:hidden; }
+  .track-row-swipe-bg{
+    position:absolute; inset:0; z-index:0;
+    background:var(--accent); color:#161110;
+    display:flex; align-items:center; gap:8px; padding-left:16px;
+    font-size:13px; font-weight:600;
+  }
+  .track-row-content{ position:relative; z-index:1; background:var(--bg); will-change:transform; }
+
   .track-row{
     display:flex; align-items:center; gap:12px;
     padding:10px 4px;
@@ -424,8 +433,14 @@ function getDuration(file){
 
 /* ---------- rendering: library ---------- */
 function trackRow(t, opts={}){
+  const wrap = document.createElement('div');
+  wrap.className = 'track-row-wrap';
+  const bg = document.createElement('div');
+  bg.className = 'track-row-swipe-bg';
+  bg.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h13M3 12h9M3 18h13M17 15l4 3-4 3v-6z"/></svg><span>Add to queue</span>`;
   const row = document.createElement('div');
-  row.className = 'track-row' + (opts.playing ? ' playing' : '');
+  row.className = 'track-row track-row-content' + (opts.playing ? ' playing' : '');
+  if(opts.onSheet) row.style.background = 'var(--bg-sheet)';
   row.innerHTML = `
     <div class="track-cover" style="--c1:${t.color}">${initials(t)}</div>
     <div class="track-meta">
@@ -438,7 +453,49 @@ function trackRow(t, opts={}){
   row.querySelector('.track-meta').onclick = () => opts.onPlay && opts.onPlay();
   row.querySelector('.track-cover').onclick = () => opts.onPlay && opts.onPlay();
   row.querySelector('.more-btn').onclick = (ev) => { ev.stopPropagation(); opts.onMore && opts.onMore(); };
-  return row;
+  wrap.appendChild(bg);
+  wrap.appendChild(row);
+  wrap.contentEl = row;
+  if(opts.enableSwipe !== false){
+    attachSwipeToQueue(wrap, row, t);
+  }
+  return wrap;
+}
+
+function attachSwipeToQueue(wrap, content, t){
+  let startX = 0, startY = 0, dx = 0, dragging = false, decided = false, horizontal = false;
+  const threshold = 70;
+  content.addEventListener('touchstart', e => {
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    dx = 0; dragging = true; decided = false; horizontal = false;
+    content.style.transition = 'none';
+  }, {passive:true});
+  content.addEventListener('touchmove', e => {
+    if(!dragging) return;
+    const x = e.touches[0].clientX, y = e.touches[0].clientY;
+    dx = x - startX;
+    const dy = y - startY;
+    if(!decided){
+      if(Math.abs(dx) > 8 || Math.abs(dy) > 8){ decided = true; horizontal = Math.abs(dx) > Math.abs(dy); }
+    }
+    if(horizontal && dx > 0){
+      const clamped = Math.min(dx, 110);
+      content.style.transform = `translateX(${clamped}px)`;
+    }
+  }, {passive:true});
+  content.addEventListener('touchend', () => {
+    dragging = false;
+    content.style.transition = 'transform .18s ease';
+    if(horizontal && dx > threshold){
+      content.style.transform = `translateX(110px)`;
+      queue.push(t.id);
+      renderQueue();
+      showToast('Added to queue');
+      setTimeout(() => { content.style.transform = 'translateX(0)'; }, 220);
+    } else {
+      content.style.transform = 'translateX(0)';
+    }
+  });
 }
 function escapeHtml(s){ const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
@@ -699,7 +756,10 @@ document.getElementById('miniplayer').addEventListener('click', (e) => {
   if(e.target.closest('button')) return;
   openModal_np();
 });
-function openModal_np(){ document.getElementById('nowplaying-sheet').classList.add('show'); }
+function openModal_np(){
+  document.getElementById('nowplaying-sheet').classList.add('show');
+  requestAnimationFrame(() => { sizeCanvas(); drawWaveform(); });
+}
 document.getElementById('npCloseBtn').onclick = () => document.getElementById('nowplaying-sheet').classList.remove('show');
 document.getElementById('npQueueBtn').onclick = () => { renderQueue(); document.getElementById('queue-sheet').classList.add('show'); };
 document.getElementById('queueCloseBtn').onclick = () => document.getElementById('queue-sheet').classList.remove('show');
@@ -738,7 +798,7 @@ function renderQueue(){
     const t = getTrack(id);
     if(!t) return;
     const realIndex = currentIndex + 1 + idx;
-    const row = trackRow(t, { onPlay: () => { currentIndex = realIndex; loadAndPlay(id); } });
+    const row = trackRow(t, { onPlay: () => { currentIndex = realIndex; loadAndPlay(id); }, enableSwipe:false, onSheet:true });
     const controls = document.createElement('div');
     controls.style.display = 'flex'; controls.style.gap = '2px';
     controls.innerHTML = `
@@ -748,7 +808,7 @@ function renderQueue(){
     controls.querySelector('[data-dir=up]').onclick = (e) => { e.stopPropagation(); if(realIndex>currentIndex+1){ [queue[realIndex-1],queue[realIndex]]=[queue[realIndex],queue[realIndex-1]]; renderQueue(); } };
     controls.querySelector('[data-dir=down]').onclick = (e) => { e.stopPropagation(); if(realIndex<queue.length-1){ [queue[realIndex+1],queue[realIndex]]=[queue[realIndex],queue[realIndex+1]]; renderQueue(); } };
     controls.querySelector('[data-dir=rm]').onclick = (e) => { e.stopPropagation(); queue.splice(realIndex,1); renderQueue(); };
-    row.appendChild(controls);
+    row.contentEl.appendChild(controls);
     list.appendChild(row);
   });
 }
