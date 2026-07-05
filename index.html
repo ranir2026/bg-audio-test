@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#12191a">
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 <title>AudioCell</title>
 <style>
   :root{
@@ -175,12 +176,21 @@
     font-size:15vw; font-weight:800; color:rgba(0,0,0,.5);
     box-shadow:0 10px 30px rgba(0,0,0,.4);
     position:relative;
+    
+    /* Apply animation permanently, but default to paused */
+    animation:spin 9s linear infinite;
+    animation-play-state:paused;
   }
   .np-cover::after{
     content:''; position:absolute; width:18%; height:18%; border-radius:50%;
     background:var(--bg); box-shadow:inset 0 0 0 2px rgba(0,0,0,.2);
   }
-  .np-cover.spin{ animation:spin 9s linear infinite; }
+  
+  /* When this class is active, the disk spins from where it left off */
+  .np-cover.spin{ 
+    animation-play-state:running; 
+  }
+  
   @keyframes spin{ from{transform:rotate(0)} to{transform:rotate(360deg)} }
 
   .np-title{font-size:20px; font-weight:700; text-align:center; padding:0 24px;}
@@ -702,6 +712,8 @@ function updateNowPlayingUI(t){
   if('mediaSession' in navigator){
     navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist, album: 'AudioCell' });
   }
+  // Sync the disk spin state with the actual audio element
+  document.getElementById('np-cover').classList.toggle('spin', !audioEl.paused);
 }
 
 function togglePlay(){ if(audioEl.paused) audioEl.play().catch(()=>{}); else audioEl.pause(); }
@@ -774,12 +786,14 @@ document.getElementById('npShuffleBtn').onclick = () => {
 /* queue rendering with drag and drop */
 let dragStartIndex = null;
 
+/* queue rendering with touch drag and drop */
 function renderQueue(){
   const list = document.getElementById('queue-list');
   list.innerHTML = '';
   const upcoming = queue.slice(currentIndex+1);
+  
   if(!upcoming.length){
-    list.innerHTML = `<div class="empty-state"><h3>Queue is empty</h3><p>Songs you add or play next will show up here.</p></div>`;
+    list.innerHTML = `<div class="empty-state"><h3 style="margin-top:0;">Queue is empty</h3><p>Songs you add or play next will show up here.</p></div>`;
     return;
   }
   
@@ -794,38 +808,24 @@ function renderQueue(){
     controls.style.display = 'flex'; controls.style.alignItems = 'center'; controls.style.gap = '12px';
     controls.innerHTML = `
       <button class="icon-btn" data-dir="rm">✕</button>
-      <div class="drag-handle" style="cursor:grab; font-size:18px; color:var(--text-dim); padding-right:8px; touch-action:none;">≡</div>`;
+      <div class="drag-handle" style="cursor:grab; font-size:22px; color:var(--text-dim); padding:0 8px; touch-action:none;">≡</div>`;
       
     controls.querySelector('[data-dir=rm]').onclick = (e) => { e.stopPropagation(); queue.splice(realIndex,1); renderQueue(); };
     row.contentEl.appendChild(controls);
-
-    // HTML5 Drag & Drop Listeners
-    row.contentEl.setAttribute('draggable', 'true');
-    row.contentEl.addEventListener('dragstart', (e) => {
-      dragStartIndex = realIndex;
-      row.contentEl.style.opacity = '0.4';
-    });
-    row.contentEl.addEventListener('dragover', (e) => {
-      e.preventDefault(); 
-      row.contentEl.style.borderTop = '2px solid var(--accent)';
-    });
-    row.contentEl.addEventListener('dragleave', (e) => {
-      row.contentEl.style.borderTop = '1px solid var(--line)';
-    });
-    row.contentEl.addEventListener('drop', (e) => {
-      e.preventDefault();
-      row.contentEl.style.borderTop = '1px solid var(--line)';
-      if(dragStartIndex !== null && dragStartIndex !== realIndex){
-        const itemToMove = queue.splice(dragStartIndex, 1)[0];
-        queue.splice(realIndex, 0, itemToMove);
-        renderQueue(); 
-      }
-    });
-    row.contentEl.addEventListener('dragend', () => {
-      row.contentEl.style.opacity = '1';
-    });
-
     list.appendChild(row);
+  });
+
+  // Initialize SortableJS for mobile-friendly dragging
+  new Sortable(list, {
+    handle: '.drag-handle',
+    animation: 150,
+    ghostClass: 'dragging-ghost', // Optional: you can style this in CSS
+    onEnd: function (evt) {
+      // Update our queue array to match the new visual order
+      const itemToMove = queue.splice(currentIndex + 1 + evt.oldIndex, 1)[0];
+      queue.splice(currentIndex + 1 + evt.newIndex, 0, itemToMove);
+      renderQueue(); // Re-render to ensure everything is strictly synced
+    }
   });
 }
 
