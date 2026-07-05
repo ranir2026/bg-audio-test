@@ -663,7 +663,8 @@ document.querySelectorAll('.nav-btn').forEach(b => b.onclick = () => switchScree
 
 /* ---------- playback engine ---------- */
 const audioEl = document.getElementById('audioEl');
-let queue = [];          
+let queue = [];
+let sortableInstance = null;          
 let currentIndex = -1;
 let currentQueueSource = null;
 let repeatMode = 'off';  
@@ -787,6 +788,7 @@ document.getElementById('npShuffleBtn').onclick = () => {
 let dragStartIndex = null;
 
 /* queue rendering with touch drag and drop */
+/* queue rendering with touch drag and drop */
 function renderQueue(){
   const list = document.getElementById('queue-list');
   list.innerHTML = '';
@@ -794,6 +796,8 @@ function renderQueue(){
   
   if(!upcoming.length){
     list.innerHTML = `<div class="empty-state"><h3 style="margin-top:0;">Queue is empty</h3><p>Songs you add or play next will show up here.</p></div>`;
+    // Clean up drag listener if queue empties out
+    if(sortableInstance) { sortableInstance.destroy(); sortableInstance = null; }
     return;
   }
   
@@ -815,16 +819,23 @@ function renderQueue(){
     list.appendChild(row);
   });
 
-  // Initialize SortableJS for mobile-friendly dragging
-  new Sortable(list, {
+  // Destroy the old Sortable instance so they don't stack up!
+  if(sortableInstance) {
+    sortableInstance.destroy();
+  }
+
+  // Initialize fresh SortableJS
+  sortableInstance = new Sortable(list, {
     handle: '.drag-handle',
     animation: 150,
-    ghostClass: 'dragging-ghost', // Optional: you can style this in CSS
+    ghostClass: 'dragging-ghost',
     onEnd: function (evt) {
-      // Update our queue array to match the new visual order
+      if(evt.oldIndex === evt.newIndex) return; // Ignore if dropped in the same spot
+      
+      // Splicing the array to match the new visual order
       const itemToMove = queue.splice(currentIndex + 1 + evt.oldIndex, 1)[0];
       queue.splice(currentIndex + 1 + evt.newIndex, 0, itemToMove);
-      renderQueue(); // Re-render to ensure everything is strictly synced
+      renderQueue(); 
     }
   });
 }
